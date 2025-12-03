@@ -1,5 +1,5 @@
 org: bemmbos
-service: bemmbos-infra # Nombre único para este stack
+service: bemmbos-infra
 
 provider:
   name: aws
@@ -16,9 +16,12 @@ provider:
     MENU_TABLE: MenuTable-${sls:stage}
     MENU_BUCKET: menu-bucket-${sls:stage}
     KITCHEN_TABLE: KitchenTable-${sls:stage}
+    # Variable para la tabla de WebSockets
+    CONNECTIONS_TABLE: ConnectionsTable-${sls:stage}
 
 resources:
   Resources:
+    # --- TABLA DE USUARIOS ---
     UserTable:
       Type: AWS::DynamoDB::Table
       Properties:
@@ -50,6 +53,7 @@ resources:
               - { AttributeName: role, KeyType: RANGE }
             Projection: { ProjectionType: ALL }
 
+    # --- TABLA DE PEDIDOS ---
     OrdersTable:
       Type: AWS::DynamoDB::Table
       Properties:
@@ -62,11 +66,13 @@ resources:
           - { AttributeName: PK, KeyType: HASH }
           - { AttributeName: SK, KeyType: RANGE }
 
+    # --- BUCKET DE PEDIDOS ---
     OrdersBucket:
       Type: AWS::S3::Bucket
       Properties:
         BucketName: ${self:provider.environment.ORDERS_BUCKET}
 
+    # --- TABLA DE MENÚ ---
     MenuTable:
       Type: AWS::DynamoDB::Table
       Properties:
@@ -79,11 +85,13 @@ resources:
           - { AttributeName: tenantId, KeyType: HASH }
           - { AttributeName: dishId, KeyType: RANGE }
 
+    # --- BUCKET DE MENÚ ---
     MenuBucket:
       Type: AWS::S3::Bucket
       Properties:
         BucketName: ${self:provider.environment.MENU_BUCKET}
 
+    # --- TABLA DE COCINAS ---
     KitchenTable:
       Type: AWS::DynamoDB::Table
       Properties:
@@ -95,3 +103,27 @@ resources:
         KeySchema:
           - { AttributeName: tenantId, KeyType: HASH }
           - { AttributeName: kitchenId, KeyType: RANGE }
+
+    # --- TABLA DE CONEXIONES WEBSOCKET ---
+    ConnectionsTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: ${self:provider.environment.CONNECTIONS_TABLE}
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - { AttributeName: tenantId, AttributeType: S }      # PK: Para enviar a todo el restaurante
+          - { AttributeName: connectionId, AttributeType: S }  # SK: ID único del socket
+        KeySchema:
+          - { AttributeName: tenantId, KeyType: HASH }
+          - { AttributeName: connectionId, KeyType: RANGE }
+
+  # --- OUTPUTS (Para exportar nombres a otros servicios) ---
+  Outputs:
+    ConnectionsTableName:
+      Value: ${self:provider.environment.CONNECTIONS_TABLE}
+      Export:
+        Name: ConnectionsTableName-${sls:stage}
+    OrdersTableName:
+      Value: ${self:provider.environment.ORDERS_TABLE}
+      Export:
+        Name: OrdersTableName-${sls:stage}
