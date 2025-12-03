@@ -1,32 +1,40 @@
 const AWS = require('aws-sdk');
 const { v4: uuidv4 } = require('uuid');
 const dynamo = new AWS.DynamoDB.DocumentClient();
+const { requireRole } = require('../utils/authMiddleware'); // Importar Helper
 
 module.exports.handler = async (event) => {
-  const body = JSON.parse(event.body);
-  const tenantId = event.requestContext.authorizer.tenantId;
-  const now = new Date().toISOString();
+  try {
+    // 1. SOLO ADMIN PUEDE CREAR PLATOS
+    requireRole(event, ['admin']);
 
-  const newItem = {
-    tenantId: tenantId,
-    // ID tipo: DISH-UUID
-    dishId: `DISH-${uuidv4()}`,
-    name: body.name,
-    description: body.description,
-    price: body.price,
-    available: true,
-    createdAt: now,
-    updatedAt: now
-  };
+    const body = JSON.parse(event.body);
+    const tenantId = event.requestContext.authorizer.tenantId;
+    const now = new Date().toISOString();
 
-  await dynamo.put({
-    TableName: process.env.MENU_TABLE,
-    Item: newItem
-  }).promise();
+    const newItem = {
+      tenantId: tenantId,
+      dishId: `DISH-${uuidv4()}`,
+      name: body.name,
+      description: body.description,
+      price: body.price,
+      available: true,
+      createdAt: now,
+      updatedAt: now
+    };
 
-  return {
-    statusCode: 201,
-    headers: { "Access-Control-Allow-Origin": "*" },
-    body: JSON.stringify(newItem)
-  };
+    await dynamo.put({
+      TableName: process.env.MENU_TABLE,
+      Item: newItem
+    }).promise();
+
+    return {
+      statusCode: 201,
+      headers: { "Access-Control-Allow-Origin": "*" },
+      body: JSON.stringify(newItem)
+    };
+  } catch (error) {
+    const statusCode = error.message.includes('FORBIDDEN') ? 403 : 500;
+    return { statusCode, body: JSON.stringify({ error: error.message }) };
+  }
 };
