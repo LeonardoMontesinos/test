@@ -1,0 +1,32 @@
+org: bemmbos
+service: bemmbos-realtime
+
+provider:
+  name: aws
+  runtime: nodejs22.x
+  region: us-east-1
+  iam:
+    role: arn:aws:iam::131515946730:role/LabRole
+  environment:
+    CONNECTIONS_TABLE: ConnectionsTable-${sls:stage}
+  
+  # Habilitar API WebSocket
+  websocketsApiName: custom-websockets-api
+  websocketsApiRouteSelectionExpression: $request.body.action
+
+functions:
+  connect:
+    handler: handlers/connect.handler
+    events:
+      - websocket:
+          route: $connect
+          
+  disconnect:
+    handler: handlers/disconnect.handler
+    events:
+      - websocket:
+          route: $disconnect
+
+resources:
+  Resources:
+    # No creamos tabla, usamos la de 01-infra
