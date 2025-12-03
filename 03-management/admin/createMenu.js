@@ -5,13 +5,18 @@ const dynamo = new AWS.DynamoDB.DocumentClient();
 module.exports.handler = async (event) => {
   const body = JSON.parse(event.body);
   const tenantId = event.requestContext.authorizer.tenantId;
+  const now = new Date().toISOString();
 
   const newItem = {
-    tenantId: tenantId, // Partition Key
-    dishId: uuidv4(),   // Sort Key
+    tenantId: tenantId,
+    // ID tipo: DISH-UUID
+    dishId: `DISH-${uuidv4()}`,
     name: body.name,
+    description: body.description,
     price: body.price,
-    description: body.description
+    available: true,
+    createdAt: now,
+    updatedAt: now
   };
 
   await dynamo.put({
