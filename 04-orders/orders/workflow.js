@@ -2,22 +2,73 @@ const AWS = require('aws-sdk');
 const dynamo = new AWS.DynamoDB.DocumentClient();
 
 const TABLE = process.env.ORDERS_TABLE;
+const CONNECTIONS_TABLE = process.env.CONNECTIONS_TABLE;
 
-// Función auxiliar para actualizar DynamoDB
+// Inicializamos el API Gateway Management (necesita la URL https)
+const apigwManagementApi = new AWS.ApiGatewayManagementApi({
+  apiVersion: '2018-11-29',
+  endpoint: process.env.WEBSOCKET_ENDPOINT
+});
+
+// --- HELPER PARA NOTIFICAR WEBSOCKET ---
+const notifyFrontend = async (tenantId, payload) => {
+  try {
+    // 1. Buscar todas las conexiones activas de este Tenant
+    const connections = await dynamo.query({
+      TableName: CONNECTIONS_TABLE,
+      KeyConditionExpression: 'tenantId = :tid',
+      ExpressionAttributeValues: { ':tid': tenantId }
+    }).promise();
+
+    // 2. Enviar mensaje a cada conexión
+    const postCalls = connections.Items.map(async ({ connectionId }) => {
+      try {
+        await apigwManagementApi.postToConnection({
+          ConnectionId: connectionId,
+          Data: JSON.stringify(payload)
+        }).promise();
+      } catch (e) {
+        if (e.statusCode === 410) {
+          // Si da 410, el usuario cerró la ventana. Borramos la conexión.
+          console.log(`Borrando conexión inactiva: ${connectionId}`);
+          await dynamo.delete({
+            TableName: CONNECTIONS_TABLE,
+            Key: { tenantId, connectionId }
+          }).promise();
+        }
+      }
+    });
+
+    await Promise.all(postCalls);
+  } catch (e) {
+    console.error("Error notificando sockets:", e);
+  }
+};
+
+// --- FUNCIÓN ACTUALIZADA DE UPDATE STATUS ---
 const updateStatus = async (tenantId, orderId, status) => {
   const now = new Date().toISOString();
+  
+  // 1. Actualizar DB
   await dynamo.update({
-    TableName: process.env.ORDERS_TABLE,
+    TableName: TABLE,
     Key: { 
         PK: `TENANT#${tenantId}`, 
-        SK: `ORDER#${orderId}` // Asegúrate que orderId traiga el prefijo ORD-
+        SK: `ORDER#${orderId}`
     },
     UpdateExpression: "set #s = :s, updatedAt = :u",
     ExpressionAttributeNames: { "#s": "status" },
     ExpressionAttributeValues: { ":s": status, ":u": now }
   }).promise();
-};
 
+  // 2. NOTIFICAR EN TIEMPO REAL
+  await notifyFrontend(tenantId, {
+    type: 'ORDER_UPDATE',
+    orderId: orderId,
+    status: status,
+    updatedAt: now
+  });
+};
 
 // --- PASO 1: VALIDATE ---
 module.exports.validate = async (event) => {
