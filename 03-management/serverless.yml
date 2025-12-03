@@ -1,0 +1,90 @@
+org: bemmbos
+service: bemmbos-management
+
+plugins:
+  - serverless-dotenv-plugin
+
+provider:
+  name: aws
+  runtime: nodejs22.x
+  region: us-east-1
+  timeout: 29
+  memorySize: 1024
+  iam:
+    role: arn:aws:iam::131515946730:role/LabRole
+  environment:
+    MENU_TABLE: MenuTable-${sls:stage}
+    MENU_BUCKET: menu-bucket-${sls:stage}
+    KITCHEN_TABLE: KitchenTable-${sls:stage}
+    USER_TABLE: UserTable-${sls:stage}
+    JWT_SECRET: 1234
+    ALLOWED_ORIGINS: ${env:ALLOWED_ORIGINS, '*'}
+
+# Definimos el Authorizer externo (del servicio 02)
+custom:
+  authorizerArn: arn:aws:lambda:us-east-1:131515946730:function:bemmbos-auth-dev-authorizer
+
+functions:
+  adminCreateWorker:
+    handler: admin/createWorker.handler
+    events:
+      - http:
+          path: admin/workers
+          method: post
+          cors: true
+          authorizer:
+            arn: ${self:custom.authorizerArn}
+            type: request
+            identitySource: method.request.header.Authorization
+
+  adminCreateMenu:
+    handler: admin/createMenu.handler
+    events:
+      - http:
+          path: admin/menu
+          method: post
+          cors: true
+          authorizer:
+            arn: ${self:custom.authorizerArn}
+            type: request
+            identitySource: method.request.header.Authorization
+
+  adminUpdateMenu:
+    handler: admin/updateMenu.handler
+    events:
+      - http:
+          path: admin/menu
+          method: patch
+          cors: true
+          authorizer:
+            arn: ${self:custom.authorizerArn}
+            type: request
+            identitySource: method.request.header.Authorization
+
+  createKitchen:
+    handler: kitchen/createKitchen.handler
+    events:
+      - http:
+          path: kitchens
+          method: post
+          cors: true
+          authorizer:
+            arn: ${self:custom.authorizerArn}
+            type: request
+            identitySource: method.request.header.Authorization
+
+  listKitchens:
+    handler: kitchen/listKitchens.handler
+    events:
+      - http:
+          path: kitchens
+          method: get
+          cors: true
+          
+  getMenu:
+    handler: kitchen/getMenu.handler
+    events:
+      - http:
+          path: menu
+          method: get
+          cors: true

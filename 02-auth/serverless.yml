@@ -1,0 +1,39 @@
+org: bemmbos
+service: bemmbos-auth
+
+plugins:
+  - serverless-dotenv-plugin
+
+provider:
+  name: aws
+  runtime: nodejs22.x
+  region: us-east-1
+  timeout: 29
+  memorySize: 1024
+  iam:
+    role: arn:aws:iam::131515946730:role/LabRole
+  environment:
+    USER_TABLE: UserTable-${sls:stage}
+    JWT_SECRET: 1234
+    ALLOWED_ORIGINS: ${env:ALLOWED_ORIGINS, '*'}
+
+functions:
+  register:
+    handler: auth/register.handler
+    events:
+      - http:
+          path: auth/register
+          method: post
+          cors: true
+
+  login:
+    handler: auth/login.handler
+    events:
+      - http:
+          path: auth/login
+          method: post
+          cors: true
+
+  # Este es el Authorizer que usarán los otros servicios
+  authorizer:
+    handler: authorizer.handler

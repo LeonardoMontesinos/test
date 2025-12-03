@@ -1,0 +1,106 @@
+org: bemmbos
+service: bemmbos-orders
+
+plugins:
+  - serverless-dotenv-plugin
+  - serverless-step-functions # <--- PLUGIN OBLIGATORIO
+
+provider:
+  name: aws
+  runtime: nodejs22.x
+  region: us-east-1
+  timeout: 29
+  memorySize: 1024
+  iam:
+    role: arn:aws:iam::131515946730:role/LabRole # Tu LabRole
+  environment:
+    ORDERS_TABLE: OrdersTable-${sls:stage}
+    # Inyectamos el ARN de la máquina para poder iniciarla desde la API
+    STATE_MACHINE_ARN: 
+      Ref: OrderLifecycleMachine
+
+custom:
+  authorizerArn: arn:aws:lambda:us-east-1:131515946730:function:bemmbos-auth-dev-authorizer
+
+functions:
+  # --- API PRINCIPAL ---
+  ordersCreate:
+    handler: orders/index.create
+    events:
+      - http:
+          path: orders
+          method: post
+          cors: true
+          authorizer:
+            arn: ${self:custom.authorizerArn}
+            type: request
+            identitySource: method.request.header.Authorization
+
+  # --- LAMBDAS DE LOS PASOS DEL STEP FUNCTION ---
+  stepValidate:
+    handler: orders/workflow.validate
+  stepKitchen:
+    handler: orders/workflow.kitchen
+  stepPackaging:
+    handler: orders/workflow.packaging
+  stepDelivery:
+    handler: orders/workflow.delivery
+  stepComplete:
+    handler: orders/workflow.complete
+  stepError:
+    handler: orders/workflow.errorHandler
+
+# --- DEFINICIÓN DE LA MÁQUINA DE ESTADOS ---
+stepFunctions:
+  stateMachines:
+    OrderLifecycleMachine:
+      name: OrderLifecycle-${sls:stage}
+      # IMPORTANTE: Usamos el LabRole también para la máquina
+      role: arn:aws:iam::131515946730:role/LabRole
+      definition:
+        StartAt: ValidateOrderStep
+        States:
+          # PASO 1: Validar
+          ValidateOrderStep:
+            Type: Task
+            Resource: !GetAtt stepValidate.Arn
+            Next: SendToKitchenStep
+            Catch:
+              - ErrorEquals: ["States.ALL"]
+                Next: ReportError
+
+          # PASO 2: Cocina
+          SendToKitchenStep:
+            Type: Task
+            Resource: !GetAtt stepKitchen.Arn
+            Next: StartPackagingStep
+            # Aquí podríamos poner un "Wait" si la cocina tarda fijo
+            # o usar .waitForTaskToken para esperar intervención humana
+
+          # PASO 3: Empaquetar
+          StartPackagingStep:
+            Type: Task
+            Resource: !GetAtt stepPackaging.Arn
+            Next: StartDeliveryStep
+
+          # PASO 4: Delivery (El diagrama dice Timeout 1800s)
+          StartDeliveryStep:
+            Type: Task
+            Resource: !GetAtt stepDelivery.Arn
+            Next: CompleteOrderStep
+            TimeoutSeconds: 1800 
+            Catch:
+              - ErrorEquals: ["States.Timeout"]
+                Next: ReportError
+
+          # PASO 5: Completar
+          CompleteOrderStep:
+            Type: Task
+            Resource: !GetAtt stepComplete.Arn
+            End: true
+
+          # MANEJO DE ERROR (Camino Rojo)
+          ReportError:
+            Type: Task
+            Resource: !GetAtt stepError.Arn
+            End: true
