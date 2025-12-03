@@ -3,7 +3,7 @@ service: bemmbos-orders
 
 plugins:
   - serverless-dotenv-plugin
-  - serverless-step-functions # <--- PLUGIN OBLIGATORIO
+  - serverless-step-functions
 
 provider:
   name: aws
@@ -12,10 +12,12 @@ provider:
   timeout: 29
   memorySize: 1024
   iam:
-    role: arn:aws:iam::131515946730:role/LabRole # Tu LabRole
+    role: arn:aws:iam::131515946730:role/LabRole
   environment:
     ORDERS_TABLE: OrdersTable-${sls:stage}
-    # Inyectamos el ARN de la máquina para poder iniciarla desde la API
+    ORDERS_BUCKET: restaurant-orders-dashboard-${sls:stage}
+    JWT_SECRET: 1234
+    ALLOWED_ORIGINS: ${env:ALLOWED_ORIGINS, '*'}
     STATE_MACHINE_ARN: 
       Ref: OrderLifecycleMachine
 
@@ -23,7 +25,6 @@ custom:
   authorizerArn: arn:aws:lambda:us-east-1:131515946730:function:bemmbos-auth-dev-authorizer
 
 functions:
-  # --- API PRINCIPAL ---
   ordersCreate:
     handler: orders/index.create
     events:
@@ -36,24 +37,56 @@ functions:
             type: request
             identitySource: method.request.header.Authorization
 
-  # --- LAMBDAS DE LOS PASOS DEL STEP FUNCTION ---
-  stepValidate:
-    handler: orders/workflow.validate
-  stepKitchen:
-    handler: orders/workflow.kitchen
-  stepPackaging:
-    handler: orders/workflow.packaging
-  stepDelivery:
-    handler: orders/workflow.delivery
-  stepComplete:
-    handler: orders/workflow.complete
-  stepError:
-    handler: orders/workflow.errorHandler
+  ordersList:
+    handler: orders/index.list
+    events:
+      - http:
+          path: orders
+          method: get
+          cors: true
+          authorizer:
+            arn: ${self:custom.authorizerArn}
+            type: request
+            identitySource: method.request.header.Authorization
 
-# --- DEFINICIÓN DE LA MÁQUINA DE ESTADOS ---
-stepFunctions:
-  stateMachines:
-    OrderLifecycleMachine:
+  ordersGet:
+    handler: orders/index.get
+    events:
+      - http:
+          path: orders/{id}
+          method: get
+          cors: true
+          authorizer:
+            arn: ${self:custom.authorizerArn}
+            type: request
+            identitySource: method.request.header.Authorization
+
+  ordersUpdateStatus:
+    handler: orders/index.updateStatus
+    events:
+      - http:
+          path: orders/{id}/status
+          method: patch
+          cors: true
+          authorizer:
+            arn: ${self:custom.authorizerArn}
+            type: request
+            identitySource: method.request.header.Authorization
+
+  # --- NUEVA FUNCIÓN CUSTOMER ---
+  orderCancel:
+    handler: orders/cancel.handler
+    events:
+      - http:
+          path: orders/{id}
+          method: delete
+          cors: true
+          authorizer:
+            arn: ${self:custom.authorizerArn}
+            type: request
+            identitySource: method.request.header.Authorization
+
+# Step Functions
       name: OrderLifecycle-${sls:stage}
       # IMPORTANTE: Usamos el LabRole también para la máquina
       role: arn:aws:iam::131515946730:role/LabRole
