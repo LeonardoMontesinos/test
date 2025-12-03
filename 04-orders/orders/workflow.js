@@ -5,16 +5,19 @@ const TABLE = process.env.ORDERS_TABLE;
 
 // Función auxiliar para actualizar DynamoDB
 const updateStatus = async (tenantId, orderId, status) => {
-  console.log(`Updating Order ${orderId} to ${status}`);
+  const now = new Date().toISOString();
   await dynamo.update({
-    TableName: TABLE,
-    Key: { PK: tenantId, SK: orderId },
-    UpdateExpression: "set #s = :s",
+    TableName: process.env.ORDERS_TABLE,
+    Key: { 
+        PK: `TENANT#${tenantId}`, 
+        SK: `ORDER#${orderId}` // Asegúrate que orderId traiga el prefijo ORD-
+    },
+    UpdateExpression: "set #s = :s, updatedAt = :u",
     ExpressionAttributeNames: { "#s": "status" },
-    ExpressionAttributeValues: { ":s": status }
+    ExpressionAttributeValues: { ":s": status, ":u": now }
   }).promise();
-  // Aquí es donde también enviarías el evento a EventBridge/SNS si quisieras
 };
+
 
 // --- PASO 1: VALIDATE ---
 module.exports.validate = async (event) => {
